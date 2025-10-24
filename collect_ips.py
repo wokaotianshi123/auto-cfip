@@ -7,11 +7,22 @@ import base64
 # --- 配置区 ---
 
 # 目标URL列表
+#
+# --- 如何排查问题 ---
+# 如果您怀疑某个网站的数据有问题，可以在对应的URL行首添加一个 # 号来“注释掉”它。
+# 这样脚本在运行时就会跳过这一行，您就可以逐个排查了。
+#
+# 示例：
+# # 'https://ip.164746.xyz',  <-- 这一行被注释掉了，脚本不会爬取它
+#   'https://cf.090227.xyz/CloudFlareYes', <-- 这一行会正常爬取
+#
 URLS = [
     'https://ip.164746.xyz',
     'https://cf.090227.xyz/CloudFlareYes',
     'https://stock.hostmonit.com/CloudFlareYes',
     'https://ip.haogege.xyz/',
+    # 'https://www.wetest.vip/page/edgeone/address_v4.html', # <-- 已根据您的要求注释掉 (无效)
+    # 'https://www.wetest.vip/page/cloudfront/address_v4.html', # <-- 已根据您的要求注释掉 (无效)
     'https://www.wetest.vip/page/cloudflare/address_v4.html'
 ]
 
@@ -22,7 +33,7 @@ VLESS_TEMPLATE = "vless://eb7638b8-3dc0-431f-8080-d0f8521d61a6@ABCDEFG:2083?encr
 # 输出文件名
 IP_LIST_FILE = 'ip.txt'
 NODES_FILE = 'nodes.txt'
-SUBSCRIPTION_FILE = 'sub.txt'
+# SUBSCRIPTION_FILE = 'sub.txt' # <-- 已根据您的要求移除
 
 # --- 脚本主逻辑 ---
 
@@ -30,7 +41,8 @@ SUBSCRIPTION_FILE = 'sub.txt'
 ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
 
 # 检查并删除旧文件，确保每次都是全新的
-for f in [IP_LIST_FILE, NODES_FILE, SUBSCRIPTION_FILE]:
+# for f in [IP_LIST_FILE, NODES_FILE, SUBSCRIPTION_FILE]: # <-- 旧代码
+for f in [IP_LIST_FILE, NODES_FILE]: # <-- 修改后: 移除 sub.txt
     if os.path.exists(f):
         os.remove(f)
         print(f"已删除旧文件: {f}")
@@ -40,6 +52,8 @@ unique_ips = set()
 
 print("开始从URL抓取IP...")
 for url in URLS:
+    # 新增: 打印当前正在处理的URL，方便调试
+    print(f"\n--- 正在处理: {url} ---")
     try:
         # 发送HTTP请求获取网页内容
         response = requests.get(url, timeout=5)
@@ -54,6 +68,7 @@ for url in URLS:
             
             # 将找到的IP添加到集合中（自动去重）
             unique_ips.update(ip_matches)
+            # 修改: 打印从当前URL找到了多少IP
             print(f"从 {url} 成功找到 {len(ip_matches)} 个IP。")
         else:
             print(f"请求 {url} 失败，状态码: {response.status_code}")
@@ -91,13 +106,13 @@ if unique_ips:
         file.write(subscription_content)
     print(f"成功！已生成 {len(all_nodes)} 个VLESS节点到 {NODES_FILE}")
 
-    # 4. 生成并保存【未编码】订阅文件到 sub.txt
+    # 4. 生成并保存【未编码】订阅文件到 sub.txt (此功能已移除)
     # (原Base64编码步骤已被移除)
     # encoded_subscription = base64.b64encode(subscription_content.encode('utf-8')).decode('utf-8')
     
-    with open(SUBSCRIPTION_FILE, 'w', encoding='utf-8') as file:
-        file.write(subscription_content) # <-- 直接写入未编码的字符串
-    print(f"成功！已生成【未编码】订阅文件到 {SUBSCRIPTION_FILE}")
+    # with open(SUBSCRIPTION_FILE, 'w', encoding='utf-8') as file:
+    #     file.write(subscription_content) # <-- 直接写入未编码的字符串
+    # print(f"成功！已生成【未编码】订阅文件到 {SUBSCRIPTION_FILE}")
 
 else:
     print('\n未找到任何有效的IP地址。')
