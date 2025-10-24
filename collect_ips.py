@@ -1,119 +1,175 @@
 import requests
-from bs4 import BeautifulSoup  # 尽管导入了，但未使用，可以保留
+from bs4 import BeautifulSoup # 导入 BS4 用于解析HTML
 import re
 import os
 import base64
+from urllib.parse import urlparse # 用于解析URL以获取域名
 
 # --- 配置区 ---
 
-# 目标URL列表
-#
-# --- 如何排查问题 ---
-# 如果您怀疑某个网站的数据有问题，可以在对应的URL行首添加一个 # 号来“注释掉”它。
-# 这样脚本在运行时就会跳过这一行，您就可以逐个排查了。
-#
-# 示例：
-# # 'https://ip.164746.xyz',  <-- 这一行被注释掉了，脚本不会爬取它
-#   'https://cf.090227.xyz/CloudFlareYes', <-- 这一行会正常爬取
-#
+# 伪装成浏览器的 Headers，解决 403 Forbidden 错误
+REQUEST_HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36'
+}
+
+# 目标URL列表 (已按您的要求更新)
 URLS = [
     'https://ip.164746.xyz',
     'https://cf.090227.xyz/CloudFlareYes',
-    'https://stock.hostmonit.com/CloudFlareYes',
     'https://api.uouin.com/cloudflare.html',
     'https://ip.haogege.xyz/',
-    # 'https://www.wetest.vip/page/edgeone/address_v4.html', # <-- 已根据您的要求注释掉 (无效)
-    # 'https://www.wetest.vip/page/cloudfront/address_v4.html', # <-- 已根据您的要求注释掉 (无效)
     'https://www.wetest.vip/page/cloudflare/address_v4.html'
 ]
 
 # VLESS 节点模板
-# ABCDEFG 将被替换为IP, #1 将被替换为节点名称
 VLESS_TEMPLATE = "vless://eb7638b8-3dc0-431f-8080-d0f8521d61a6@ABCDEFG:2083?encryption=none&security=tls&sni=x.yangqian.dpdns.org&alpn=h2%2Chttp%2F1.1&fp=chrome&type=ws&host=x.yangqian.dpdns.org&path=%2Fprime#1"
 
 # 输出文件名
 IP_LIST_FILE = 'ip.txt'
 NODES_FILE = 'nodes.txt'
-# SUBSCRIPTION_FILE = 'sub.txt' # <-- 已根据您的要求移除
 
 # --- 脚本主逻辑 ---
 
 # 正则表达式用于匹配IP地址
-ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
+ip_pattern = re.compile(r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b')
 
-# 检查并删除旧文件，确保每次都是全新的
-# for f in [IP_LIST_FILE, NODES_FILE, SUBSCRIPTION_FILE]: # <-- 旧代码
-for f in [IP_LIST_FILE, NODES_FILE]: # <-- 修改后: 移除 sub.txt
+# 检查并删除旧文件
+for f in [IP_LIST_FILE, NODES_FILE]:
     if os.path.exists(f):
         os.remove(f)
         print(f"已删除旧文件: {f}")
 
-# 使用集合存储IP地址实现自动去重
-unique_ips = set()
+# 使用字典来存储IP和其对应的数据
+# 格式: { "1.1.1.1": {"isp": "移动", "source": "ip.haogege.xyz"} }
+ip_data_map = {}
 
-print("开始从URL抓取IP...")
+# 1. 优先处理能解析运营商的网站
+print("--- 开始HTML结构化解析 (带运营商) ---")
+sites_with_isp = ['ip.haogege.xyz'] # 在这里添加你知道的、提供运营商信息的网站
+simple_sites = []
+
 for url in URLS:
-    # 新增: 打印当前正在处理的URL，方便调试
-    print(f"\n--- 正在处理: {url} ---")
+    # 提取域名作为来源标识
     try:
-        # 发送HTTP请求获取网页内容
-        response = requests.get(url, timeout=5)
+        source_domain = urlparse(url).netloc
+    except Exception:
+        source_domain = url # 如果解析失败，使用完整URL作为备选
         
-        # 确保请求成功
+    if any(site in url for site in sites_with_isp):
+        print(f"\n--- 正在处理 (HTML模式): {url} ---")
+        try:
+            response = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                rows = soup.find_all('tr')
+                if not rows:
+                    rows = soup.find_all('li')
+                if not rows:
+                    rows = soup.find_all('div')
+                    
+                print(f"在 {url} 找到 {len(rows)} 个可能的条目...")
+                
+                count = 0
+                for row in rows:
+                    row_text = row.get_text()
+                    ip_match = ip_pattern.search(row_text)
+                    
+                    if ip_match:
+                        ip = ip_match.group(0)
+                        
+                        if ip in ip_data_map:
+                            continue
+                            
+                        # 确定运营商
+                        isp = "通用" # 默认值
+                        if "移动" in row_text:
+                            isp = "移动"
+                        elif "联通" in row_text:
+                            isp = "联通"
+                        elif "电信" in row_text:
+                            isp = "电信"
+                        
+                        # 保存数据，包括来源域名
+                        ip_data_map[ip] = {"isp": isp, "source": source_domain}
+                        count += 1
+                print(f"从 {url} 成功解析到 {count} 个新的 IP-ISP 对。")
+                        
+            else:
+                print(f"请求 {url} 失败，状态码: {response.status_code}")
+        except requests.exceptions.RequestException as e:
+            print(f"请求 {url} 失败: {e}")
+    else:
+        # 如果不是带ISP的网站，先存起来
+        simple_sites.append((url, source_domain)) # 把域名也存起来
+
+# 2. 处理那些纯文本IP列表的网站
+print("\n--- 开始纯文本IP列表解析 ---")
+for url, source_domain in simple_sites: # 循环时带上域名
+    print(f"\n--- 正在处理 (Text模式): {url} ---")
+    try:
+        response = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
         if response.status_code == 200:
-            # 获取网页的文本内容
-            html_content = response.text
-            
-            # 使用正则表达式查找IP地址
-            ip_matches = re.findall(ip_pattern, html_content, re.IGNORECASE)
-            
-            # 将找到的IP添加到集合中（自动去重）
-            unique_ips.update(ip_matches)
-            # 修改: 打印从当前URL找到了多少IP
-            print(f"从 {url} 成功找到 {len(ip_matches)} 个IP。")
+            ip_matches = ip_pattern.findall(response.text)
+            count = 0
+            for ip in ip_matches:
+                if ip not in ip_data_map:
+                    # 保存数据，包括来源域名
+                    ip_data_map[ip] = {"isp": "通用", "source": source_domain}
+                    count += 1
+            print(f"从 {url} 成功找到 {len(ip_matches)} 个IP (新增了 {count} 个)。")
         else:
             print(f"请求 {url} 失败，状态码: {response.status_code}")
-            
     except requests.exceptions.RequestException as e:
         print(f"请求 {url} 失败: {e}")
         continue
 
 # --- 处理和保存 ---
 
-if unique_ips:
-    # 按IP地址的数字顺序排序（非字符串顺序）
-    sorted_ips = sorted(unique_ips, key=lambda ip: [int(part) for part in ip.split('.')])
+if ip_data_map:
+    # 按IP地址的数字顺序排序
+    # ip_data_map.items() 会得到 [('1.1.1.1', {'isp': '移动', 'source': 'ip.haogege.xyz'}), ...]
+    sorted_ip_data = sorted(
+        ip_data_map.items(), 
+        key=lambda item: [int(part) for part in item[0].split('.')]
+    )
+    
+    print(f"\n成功！共找到 {len(sorted_ip_data)} 个唯一的IP地址。")
     
     # 1. 保存IP列表到 ip.txt
     with open(IP_LIST_FILE, 'w') as file:
-        for ip in sorted_ips:
+        for ip, data in sorted_ip_data:
             file.write(ip + '\n')
-    print(f"\n成功！已保存 {len(sorted_ips)} 个唯一IP地址到 {IP_LIST_FILE}")
-
-    # 2. 生成节点链接列表
-    all_nodes = []
-    for i, ip in enumerate(sorted_ips):
-        # 替换IP地址
-        new_node_url = VLESS_TEMPLATE.replace("ABCDEFG", ip)
-        # 替换节点名称 (例如: #1 替换为 #CF-优选-1)
-        new_node_url = new_node_url.replace("#1", f"#CF-优选-{i+1}")
-        all_nodes.append(new_node_url)
+            
+    # 2. 生成节点链接并保存到 nodes.txt
+    # 用于为每个域名单独编号
+    domain_counters = {}
     
-    # 将节点列表连接成一个字符串，供后续两个文件使用
-    subscription_content = "\n".join(all_nodes)
-    
-    # 3. 保存原始节点链接到 nodes.txt
     with open(NODES_FILE, 'w', encoding='utf-8') as file:
-        file.write(subscription_content)
-    print(f"成功！已生成 {len(all_nodes)} 个VLESS节点到 {NODES_FILE}")
-
-    # 4. 生成并保存【未编码】订阅文件到 sub.txt (此功能已移除)
-    # (原Base64编码步骤已被移除)
-    # encoded_subscription = base64.b64encode(subscription_content.encode('utf-8')).decode('utf-8')
+        for ip, data in sorted_ip_data:
+            # 替换IP地址
+            new_node_url = VLESS_TEMPLATE.replace("ABCDEFG", ip)
+            
+            # 获取来源域名
+            source = data['source']
+            
+            # 为该域名生成一个唯一的编号
+            if source not in domain_counters:
+                domain_counters[source] = 1
+            else:
+                domain_counters[source] += 1
+            
+            count = domain_counters[source]
+            
+            # 构建新的节点名称, 格式如: #ip.haogege.xyz-1
+            node_name = f"#{source}-{count}"
+            
+            # 替换节点名称
+            new_node_url = new_node_url.replace("#1", node_name)
+            
+            file.write(new_node_url + '\n')
     
-    # with open(SUBSCRIPTION_FILE, 'w', encoding='utf-8') as file:
-    #     file.write(subscription_content) # <-- 直接写入未编码的字符串
-    # print(f"成功！已生成【未编码】订阅文件到 {SUBSCRIPTION_FILE}")
+    print(f"成功！已生成 {len(sorted_ip_data)} 个VLESS节点到 {NODES_FILE} (带来源域名信息)")
 
 else:
     print('\n未找到任何有效的IP地址。')
