@@ -85,18 +85,22 @@ if unique_ips:
         new_node_url = new_node_url.replace("#1", f"#CF-优选-{i+1}")
         all_nodes.append(new_node_url)
     
+    # 将节点列表连接成一个字符串，供后续两个文件使用
+    subscription_content = "\n".join(all_nodes)
+    
     # 3. 保存原始节点链接到 nodes.txt
     with open(NODES_FILE, 'w', encoding='utf-8') as file:
-        file.write("\n".join(all_nodes))
+        file.write(subscription_content)
     print(f"成功！已生成 {len(all_nodes)} 个VLESS节点到 {NODES_FILE}")
 
-    # 4. 生成并保存Base64订阅文件到 sub.txt
-    subscription_content = "\n".join(all_nodes)
-    encoded_subscription = base64.b64encode(subscription_content.encode('utf-8')).decode('utf-8')
+    # 4. 生成并保存【未编码】订阅文件到 sub.txt
+    # (原Base64编码步骤已被移除)
+    # encoded_subscription = base64.b64encode(subscription_content.encode('utf-8')).decode('utf-8')
     
     with open(SUBSCRIPTION_FILE, 'w', encoding='utf-8') as file:
-        file.write(encoded_subscription)
-    print(f"成功！已生成Base64订阅文件到 {SUBSCRIPTION_FILE}")
+        file.write(subscription_content) # <-- 直接写入未编码的字符串
+    print(f"成功！已生成【未编码】订阅文件到 {SUBSCRIPTION_FILE}")
 
 else:
     print('\n未找到任何有效的IP地址。')
+
