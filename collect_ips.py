@@ -12,8 +12,6 @@ URLS = [
     'https://cf.090227.xyz/CloudFlareYes',
     'https://stock.hostmonit.com/CloudFlareYes',
     'https://ip.haogege.xyz/',
-    'https://www.wetest.vip/page/edgeone/address_v4.html',
-    'https://www.wetest.vip/page/cloudfront/address_v4.html',
     'https://www.wetest.vip/page/cloudflare/address_v4.html'
 ]
 
