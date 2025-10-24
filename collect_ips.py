@@ -1,7 +1,7 @@
 import requests
 import re
 import os
-from urllib.parse import urlparse # 用于解析URL以获取域名
+from urllib.parse import urlparse # 重新导入以解析域名
 
 # --- 配置区 ---
 
@@ -37,41 +37,35 @@ for f in [IP_LIST_FILE, NODES_FILE]:
         os.remove(f)
         print(f"已删除旧文件: {f}")
 
-# 使用字典来存储IP和其对应的精简来源 (e.g., {"1.1.1.1": "haogege"})
+# 使用字典来存储IP和其对应的来源域名 (e.g., {"1.1.1.1": "ip.164746.xyz"})
 ip_source_map = {}
 
 print("--- 开始爬取所有网站 (纯文本模式) ---")
 
 for url in URLS:
-    # 提取域名并精简
-    short_name = url # 默认备选方案
+    # 提取完整域名
+    full_domain = url # 默认备选方案
     try:
-        full_domain = urlparse(url).netloc # e.g., ip.haogege.xyz
-        domain_parts = full_domain.split('.') # e.g., ['ip', 'haogege', 'xyz']
-        
-        # 提取二级域名 (e.g., haogege, 090227)
-        if len(domain_parts) > 1:
-            short_name = domain_parts[-2] # 获取倒数第二个部分
-        else:
-            short_name = full_domain
-            
+        full_domain = urlparse(url).netloc # e.g., ip.164746.xyz
+        if not full_domain: full_domain = url # 备用
     except Exception:
-        # 如果解析失败，short_name 保持为原始URL
         pass
 
-    print(f"\n--- 正在处理: {url} (来源标识: {short_name}) ---")
+    print(f"\n--- GANG_GANG 正在处理: {url} (来源标识: {full_domain}) ---")
     
     # 统一使用纯文本模式处理
     try:
         response = requests.get(url, headers=REQUEST_HEADERS, timeout=10)
         if response.status_code == 200:
             ip_matches = ip_pattern.findall(response.text)
+            
             count = 0
             for ip in ip_matches:
                 if ip not in ip_source_map:
-                    # 保存数据，只保存精简后的来源名
-                    ip_source_map[ip] = short_name
+                    # 保存数据，使用完整域名作为来源
+                    ip_source_map[ip] = full_domain
                     count += 1
+            
             print(f"从 {url} 成功找到 {len(ip_matches)} 个IP (新增了 {count} 个)。")
         else:
             print(f"请求 {url} 失败，状态码: {response.status_code}")
@@ -83,7 +77,6 @@ for url in URLS:
 
 if ip_source_map:
     # 按IP地址的数字顺序排序
-    # ip_source_map.items() 会得到 [('1.1.1.1', 'haogege'), ...]
     sorted_ip_data = sorted(
         ip_source_map.items(), 
         key=lambda item: [int(part) for part in item[0].split('.')]
@@ -101,7 +94,7 @@ if ip_source_map:
     domain_counters = {}
     
     with open(NODES_FILE, 'w', encoding='utf-8') as file:
-        for ip, source in sorted_ip_data: # 'source' 已经是精简后的名称
+        for ip, source in sorted_ip_data: # 'source' 是完整域名
             # 替换IP地址
             new_node_url = VLESS_TEMPLATE.replace("ABCDEFG", ip)
             
@@ -113,16 +106,15 @@ if ip_source_map:
             
             count = domain_counters[source]
             
-            # 构建新的节点名称, 格式如: #haogege-1
+            # 构建新的节点名称, 格式如: #ip.164746.xyz-1
             node_name = f"#{source}-{count}"
             
-            # 替换节点名称
-            # 节点名 (# 之后的内容) 不需要 URL 编码
+            # 替换节点名称 (不进行URL编码)
             new_node_url = new_node_url.replace("#1", node_name)
             
             file.write(new_node_url + '\n')
     
-    print(f"成功！已生成 {len(sorted_ip_data)} 个VLESS节点到 {NODES_FILE} (带精简来源信息)")
+    print(f"成功！已生成 {len(sorted_ip_data)} 个VLESS节点到 {NODES_FILE} (带来源域名命名)")
 
 else:
     print('\n未找到任何有效的IP地址。')
