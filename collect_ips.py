@@ -116,12 +116,9 @@ if ip_source_map:
             # 构建新的节点名称, 格式如: #haogege-1
             node_name = f"#{source}-{count}"
             
-            # 替换节点名称 (使用 urlsafe 编码处理特殊字符，以防万一)
-            # URL 锚点 (#) 后的内容最好不要有特殊字符
-            import urllib.parse
-            safe_node_name = urllib.parse.quote(node_name)
-            
-            new_node_url = new_node_url.replace("#1", safe_node_name)
+            # 替换节点名称
+            # 节点名 (# 之后的内容) 不需要 URL 编码
+            new_node_url = new_node_url.replace("#1", node_name)
             
             file.write(new_node_url + '\n')
     
