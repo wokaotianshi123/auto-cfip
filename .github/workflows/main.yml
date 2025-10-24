@@ -40,7 +40,7 @@ jobs:
         git config --global pull.rebase false
         git pull # 拉取远程更改，避免冲突
         if [ -n "$(git status --porcelain)" ]; then
-          git add ip.txt nodes.txt sub.txt  # <-- 关键修改在这里
+          git add ip.txt nodes.txt   # <-- 关键修改在这里
           git commit -m "Automatic IP and subscription update"
           git push
         else
