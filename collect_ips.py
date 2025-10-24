@@ -1,12 +1,15 @@
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup  # 尽管导入了，但未使用，可以保留
 import re
 import os
+import base64
+
+# --- 配置区 ---
 
 # 目标URL列表
 URLS = [
-    'https://ip.164746.xyz', 
-    'https://cf.090227.xyz/CloudFlareYes', 
+    'https://ip.164746.xyz',
+    'https://cf.090227.xyz/CloudFlareYes',
     'https://stock.hostmonit.com/CloudFlareYes',
     'https://ip.haogege.xyz/',
     'https://www.wetest.vip/page/edgeone/address_v4.html',
@@ -14,16 +17,30 @@ URLS = [
     'https://www.wetest.vip/page/cloudflare/address_v4.html'
 ]
 
+# VLESS 节点模板
+# ABCDEFG 将被替换为IP, #1 将被替换为节点名称
+VLESS_TEMPLATE = "vless://eb7638b8-3dc0-431f-8080-d0f8521d61a6@ABCDEFG:2083?encryption=none&security=tls&sni=x.yangqian.dpdns.org&alpn=h2%2Chttp%2F1.1&fp=chrome&type=ws&host=x.yangqian.dpdns.org&path=%2Fprime#1"
+
+# 输出文件名
+IP_LIST_FILE = 'ip.txt'
+NODES_FILE = 'nodes.txt'
+SUBSCRIPTION_FILE = 'sub.txt'
+
+# --- 脚本主逻辑 ---
+
 # 正则表达式用于匹配IP地址
 ip_pattern = r'\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b'
 
-# 检查ip.txt文件是否存在,如果存在则删除它
-if os.path.exists('ip.txt'):
-    os.remove('ip.txt')
+# 检查并删除旧文件，确保每次都是全新的
+for f in [IP_LIST_FILE, NODES_FILE, SUBSCRIPTION_FILE]:
+    if os.path.exists(f):
+        os.remove(f)
+        print(f"已删除旧文件: {f}")
 
 # 使用集合存储IP地址实现自动去重
 unique_ips = set()
 
+print("开始从URL抓取IP...")
 for url in URLS:
     try:
         # 发送HTTP请求获取网页内容
@@ -39,18 +56,47 @@ for url in URLS:
             
             # 将找到的IP添加到集合中（自动去重）
             unique_ips.update(ip_matches)
+            print(f"从 {url} 成功找到 {len(ip_matches)} 个IP。")
+        else:
+            print(f"请求 {url} 失败，状态码: {response.status_code}")
+            
     except requests.exceptions.RequestException as e:
-        print(f'请求 {url} 失败: {e}')
+        print(f"请求 {url} 失败: {e}")
         continue
 
-# 将去重后的IP地址按数字顺序排序后写入文件
+# --- 处理和保存 ---
+
 if unique_ips:
     # 按IP地址的数字顺序排序（非字符串顺序）
     sorted_ips = sorted(unique_ips, key=lambda ip: [int(part) for part in ip.split('.')])
     
-    with open('ip.txt', 'w') as file:
+    # 1. 保存IP列表到 ip.txt
+    with open(IP_LIST_FILE, 'w') as file:
         for ip in sorted_ips:
             file.write(ip + '\n')
-    print(f'已保存 {len(sorted_ips)} 个唯一IP地址到ip.txt文件。')
+    print(f"\n成功！已保存 {len(sorted_ips)} 个唯一IP地址到 {IP_LIST_FILE}")
+
+    # 2. 生成节点链接列表
+    all_nodes = []
+    for i, ip in enumerate(sorted_ips):
+        # 替换IP地址
+        new_node_url = VLESS_TEMPLATE.replace("ABCDEFG", ip)
+        # 替换节点名称 (例如: #1 替换为 #CF-优选-1)
+        new_node_url = new_node_url.replace("#1", f"#CF-优选-{i+1}")
+        all_nodes.append(new_node_url)
+    
+    # 3. 保存原始节点链接到 nodes.txt
+    with open(NODES_FILE, 'w', encoding='utf-8') as file:
+        file.write("\n".join(all_nodes))
+    print(f"成功！已生成 {len(all_nodes)} 个VLESS节点到 {NODES_FILE}")
+
+    # 4. 生成并保存Base64订阅文件到 sub.txt
+    subscription_content = "\n".join(all_nodes)
+    encoded_subscription = base64.b64encode(subscription_content.encode('utf-8')).decode('utf-8')
+    
+    with open(SUBSCRIPTION_FILE, 'w', encoding='utf-8') as file:
+        file.write(encoded_subscription)
+    print(f"成功！已生成Base64订阅文件到 {SUBSCRIPTION_FILE}")
+
 else:
-    print('未找到有效的IP地址。')
+    print('\n未找到任何有效的IP地址。')
